@@ -617,6 +617,35 @@ pub fn get_image_config(
             img_cfg.image_std = Some([0.5, 0.5, 0.5]);
             Some(img_cfg)
         }
+        ModelType::GlmOcr => {
+            use crate::models::glm_ocr::config::GlmOcrConfig;
+            let Some(extra_config_json) = config.extra_config_json.as_ref() else {
+                return Ok(None);
+            };
+            let cfg: GlmOcrConfig =
+                serde_json::from_str(extra_config_json).map_err(candle_core::Error::wrap)?;
+            let vc = &cfg.vision_config;
+            // GLM-OCR uses image_start/image_pad/image_end token placeholders.
+            // The pixel values are already flattened patches: [N, C*T*pH*pW].
+            let mut img_cfg = ImageProcessConfig::default(
+                Some("<|begin_of_image|>".to_string()),
+                "<|image_pad|>".to_string(),
+                None,
+                "<|end_of_image|>".to_string(),
+                vc.spatial_merge_size,
+                Some(vc.temporal_patch_size),
+                vc.patch_size,
+                // GLM-OCR supports dynamic resolution; 1344 is the typical max
+                1344,
+                false,
+            );
+            img_cfg.model_type = ModelType::GlmOcr;
+            img_cfg.image_token_id = Some(cfg.image_token_id);
+            // Mean/std from GLM-OCR preprocessing (same as CLIPImageProcessor defaults)
+            img_cfg.image_mean = Some([0.48145466, 0.4578275, 0.40821073]);
+            img_cfg.image_std = Some([0.26862954, 0.26130258, 0.27577711]);
+            Some(img_cfg)
+        }
         _ => None,
     };
     Ok(img_cfg)

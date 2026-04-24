@@ -186,6 +186,22 @@ impl GLM4ForCausalLM {
         device: &Device,
         progress_reporter: Arc<RwLock<Box<dyn ProgressLike>>>,
     ) -> Result<Self> {
+        Self::new_with_prefix(vb, comm, config, dtype, is_rope_i, device, progress_reporter, None)
+    }
+
+    /// Create a GLM4ForCausalLM with a custom weight prefix.
+    /// When `prefix` is Some("model.language_model."), the weights are loaded from
+    /// `{prefix}embed_tokens`, `{prefix}layers.{i}`, `{prefix}norm`, and `lm_head`.
+    pub fn new_with_prefix(
+        vb: &VarBuilderX,
+        comm: Rc<Comm>,
+        config: &Config,
+        dtype: DType,
+        is_rope_i: bool,
+        device: &Device,
+        progress_reporter: Arc<RwLock<Box<dyn ProgressLike>>>,
+        prefix: Option<String>,
+    ) -> Result<Self> {
         let key_map: HashMap<&str, &str> = [
             ("model.embed_tokens", "token_embd"),
             ("lm_head", "output"),
@@ -198,13 +214,30 @@ impl GLM4ForCausalLM {
         let reporter = progress_reporter.clone();
 
         let is_qvar_builder = vb.is_qvar_builder();
+
+        // Helper: build a VarBuilderX with the given HF path (possibly prefixed)
+        let hf_vb = |hf_path: &str| -> VarBuilderX {
+            if is_qvar_builder {
+                vb.clone()
+            } else if let Some(pfx) = prefix.as_deref() {
+                // prefix is like "model.language_model.", so strip "model." from hf_path
+                // E.g. "model.embed_tokens" -> strip "model." -> "embed_tokens"
+                // Then prefix + "embed_tokens" = "model.language_model.embed_tokens"
+                let short = hf_path.strip_prefix("model.").unwrap_or(hf_path);
+                let full = format!("{}{}", pfx, short);
+                vb.pp(full)
+            } else {
+                vb.pp(hf_path)
+            }
+        };
+
         let (embed_tokens, vocab_size) = embedding(
             config.vocab_size,
             config.hidden_size,
             if is_qvar_builder {
                 vb.pp(key_map["model.embed_tokens"])
             } else {
-                vb.pp("model.embed_tokens")
+                hf_vb("model.embed_tokens")
             },
             dtype,
         )?;
@@ -220,19 +253,18 @@ impl GLM4ForCausalLM {
             config.rope_theta,
         )?);
 
+        let layers_prefix = if is_qvar_builder {
+            key_map["model.layers"].to_string()
+        } else if let Some(pfx) = prefix.as_deref() {
+            format!("{}layers", pfx)
+        } else {
+            "model.layers".to_string()
+        };
+
         let mut layers = Vec::new();
         for i in 0..config.num_hidden_layers {
             let layer = GLM4DecoderLayer::new(
-                vb.pp(format!(
-                    "{}.{}",
-                    if is_qvar_builder {
-                        key_map["model.layers"]
-                    } else {
-                        "model.layers"
-                    },
-                    i
-                )
-                .as_str()),
+                vb.pp(format!("{}.{}", layers_prefix, i).as_str()),
                 comm.clone(),
                 rotary_emb.clone(),
                 config,
@@ -248,28 +280,25 @@ impl GLM4ForCausalLM {
             if is_qvar_builder {
                 vb.pp(key_map["model.norm"])
             } else {
-                vb.pp("model.norm")
+                hf_vb("model.norm")
             },
             dtype,
             false,
         )?;
 
+        // lm_head: for GLM-OCR, lm_head is at top level (not under language_model)
+        let lm_head_vb = if is_qvar_builder {
+            vb.pp(key_map["lm_head"])
+        } else if config.tie_word_embeddings.is_some_and(|x| x) {
+            hf_vb("model.embed_tokens")
+        } else {
+            vb.pp("lm_head")
+        };
+
         let lm_head = ReplicatedLinear::load_no_bias(
             config.hidden_size,
             vocab_size,
-            if config.tie_word_embeddings.is_some_and(|x| x) {
-                if is_qvar_builder {
-                    vb.pp(key_map["model.embed_tokens"])
-                } else {
-                    vb.pp("model.embed_tokens")
-                }
-            } else {
-                if is_qvar_builder {
-                    vb.pp(key_map["lm_head"])
-                } else {
-                    vb.pp("lm_head")
-                }
-            },
+            lm_head_vb,
             &None,
             &None,
             dtype,
