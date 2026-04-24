@@ -398,9 +398,14 @@ impl Attention {
         .collect();
 
         let is_qvar_builder = vb.is_qvar_builder();
-        let arch = config.architectures.as_ref().unwrap()[0].clone();
+        let arch = config
+            .architectures
+            .as_ref()
+            .and_then(|a| a.first())
+            .map(|s| s.as_str())
+            .unwrap_or("");
         let is_qwen35_or_next = matches!(
-            arch.as_str(),
+            arch,
             "Qwen3_5ForCausalLM"
                 | "Qwen3_5ForConditionalGeneration"
                 | "Qwen3_5MoeForCausalLM"
@@ -437,8 +442,7 @@ impl Attention {
         .iter()
         .map(|s| s.to_string())
         .collect();
-        let is_gemma = arch == "Gemma3ForConditionalGeneration".to_string()
-            || arch == "Gemma3ForCausalLM".to_string();
+        let is_gemma = arch == "Gemma3ForConditionalGeneration" || arch == "Gemma3ForCausalLM";
         // Qwen3.5/Qwen3Next per-head q/k norms use Gemma-style +1 weight semantics.
         let qk_norm_add_one = is_gemma || (is_qwen35_or_next && !is_qvar_builder);
 
@@ -616,7 +620,7 @@ impl Attention {
             )?,
             softcapping: config.attn_logit_softcapping,
             dtype,
-            no_per_head_norm: no_per_head_norm_models.contains(&arch),
+            no_per_head_norm: no_per_head_norm_models.iter().any(|m| m == arch),
             full_dim_qk_norm,
             is_qvar_builder,
             qk_l2_norm,
