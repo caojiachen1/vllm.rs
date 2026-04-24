@@ -497,7 +497,7 @@ impl GlmOcrVisionModel {
             .unwrap_or(1);
 
         let freq_table = self.rotary_pos_emb.forward(max_grid)?; // [max_grid, half_head_dim]
-        let half_dim = freq_table.dim(1)?;
+        let _half_dim = freq_table.dim(1)?;
 
         let mut all_pos_ids: Vec<(Vec<i64>, Vec<i64>)> = Vec::new();
 

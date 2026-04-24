@@ -225,7 +225,7 @@ impl GLM4ForCausalLM {
                 // Then prefix + "embed_tokens" = "model.language_model.embed_tokens"
                 let short = hf_path.strip_prefix("model.").unwrap_or(hf_path);
                 let full = format!("{}{}", pfx, short);
-                vb.pp(full)
+                vb.pp(&full)
             } else {
                 vb.pp(hf_path)
             }
