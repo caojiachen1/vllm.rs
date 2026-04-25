@@ -2,7 +2,7 @@
 //! Image + Prompt processor for GLM-OCR.
 //! Resizes, normalizes, and extracts 3D patches from images.
 use crate::utils::image::{
-    image_resize, to_tensor, ImageProcessConfig, ImageProcessTrait, ToFilter,
+    to_tensor, ImageProcessConfig, ImageProcessTrait, ToFilter,
 };
 use crate::utils::image::{IMAGE_PLACEHOLDER, PLACEHOLDER};
 use candle_core::{Device, Result, Tensor};
