@@ -23,7 +23,20 @@ pub struct ImageData {
 
 impl ImageData {
     pub fn to_tensor_f32(&self, device: &Device) -> Result<Tensor> {
-        let floats: &[f32] = bytemuck::cast_slice(&self.raw);
+        // Vec<u8> is only 1-byte aligned, but bytemuck::cast_slice requires
+        // f32 alignment (4 bytes). Fall back to byte-by-byte copy when
+        // alignment is insufficient.
+        let floats: &[f32] = match bytemuck::try_cast_slice(&self.raw) {
+            Ok(f) => f,
+            Err(_) => {
+                let n = self.raw.len() / 4;
+                let mut aligned = vec![0f32; n];
+                for (i, chunk) in self.raw.chunks_exact(4).enumerate().take(n) {
+                    aligned[i] = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                }
+                return Tensor::from_vec(aligned, self.shape.clone(), device);
+            }
+        };
         Tensor::from_slice(floats, self.shape.clone(), device)
     }
 }
@@ -615,6 +628,35 @@ pub fn get_image_config(
             img_cfg.scale_factor = Some(1.0 / 255.0);
             img_cfg.image_mean = Some([0.5, 0.5, 0.5]);
             img_cfg.image_std = Some([0.5, 0.5, 0.5]);
+            Some(img_cfg)
+        }
+        ModelType::GlmOcr => {
+            use crate::models::glm_ocr::config::GlmOcrConfig;
+            let Some(extra_config_json) = config.extra_config_json.as_ref() else {
+                return Ok(None);
+            };
+            let cfg: GlmOcrConfig =
+                serde_json::from_str(extra_config_json).map_err(candle_core::Error::wrap)?;
+            let vc = &cfg.vision_config;
+            // GLM-OCR uses image_start/image_pad/image_end token placeholders.
+            // The pixel values are already flattened patches: [N, C*T*pH*pW].
+            let mut img_cfg = ImageProcessConfig::default(
+                Some("<|begin_of_image|>".to_string()),
+                "<|image_pad|>".to_string(),
+                None,
+                "<|end_of_image|>".to_string(),
+                vc.spatial_merge_size,
+                Some(vc.temporal_patch_size),
+                vc.patch_size,
+                // GLM-OCR supports dynamic resolution; 1344 is the typical max
+                1344,
+                false,
+            );
+            img_cfg.model_type = ModelType::GlmOcr;
+            img_cfg.image_token_id = Some(cfg.image_token_id);
+            // Mean/std from GLM-OCR preprocessing (same as CLIPImageProcessor defaults)
+            img_cfg.image_mean = Some([0.48145466, 0.4578275, 0.40821073]);
+            img_cfg.image_std = Some([0.26862954, 0.26130258, 0.27577711]);
             Some(img_cfg)
         }
         _ => None,

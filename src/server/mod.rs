@@ -1282,6 +1282,7 @@ pub fn build_messages_and_images(
     messages: &[ChatMessage],
     img_cfg: Option<&ImageProcessConfig>,
 ) -> Result<(Vec<Message>, Option<ImageData>)> {
+    use crate::models::glm_ocr::input::GlmOcrImageProcessor;
     use crate::models::qwen3_vl::input::Qwen3VLImageProcessor;
     use crate::utils::config::ModelType;
     use crate::utils::image::ImageProcessor;
@@ -1289,6 +1290,8 @@ pub fn build_messages_and_images(
     let mut processor: Option<Box<dyn ImageProcessTrait + Send>> = if let Some(cfg) = img_cfg {
         if matches!(cfg.model_type, ModelType::Qwen3VL) {
             Some(Box::new(Qwen3VLImageProcessor::default(cfg)))
+        } else if matches!(cfg.model_type, ModelType::GlmOcr) {
+            Some(Box::new(GlmOcrImageProcessor::default(cfg)))
         } else {
             Some(Box::new(ImageProcessor::new(cfg)))
         }
