@@ -48,16 +48,16 @@ impl GlmOcrImageProcessor {
     }
 
     /// Resize the image to dimensions divisible by factor (patch_size * merge_size).
+    /// Guarantees nh >= factor and nw >= factor (at least 1 grid cell).
     fn smart_resize(&self, h: usize, w: usize) -> Result<(usize, usize)> {
         let factor = self.patch_size * self.merge_size;
         // Use ceil to always round up, and enforce minimum of factor
         let mut nh = ((h as f64 / factor as f64).ceil() as usize * factor).max(factor);
         let mut nw = ((w as f64 / factor as f64).ceil() as usize * factor).max(factor);
-        eprintln!("[GLM-OCR smart_resize] input h={}, w={}, factor={}, min_h={}, min_w={}, nh={}, nw={}",
-            h, w, factor, factor, factor, nh, nw);
+        eprintln!("[GLM-OCR smart_resize] h={}, w={}, factor={}, nh={}, nw={}", h, w, factor, nh, nw);
 
         let pixels = nh * nw;
-        // Scale down if too large, scale up if too small
+        // Scale down if too large, scale up if too small (always preserving >= factor)
         if pixels > self.max_pixels {
             let beta = (pixels as f64 / self.max_pixels as f64).sqrt();
             nh = (((nh as f64 / beta) as usize / factor) * factor).max(factor);
