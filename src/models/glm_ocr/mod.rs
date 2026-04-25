@@ -175,12 +175,21 @@ impl GlmOcrForConditionalGeneration {
 
             // pixel_values from GlmOcrImageProcessor: [N_images, N_patches, C*T*pH*pW]
             // Vision model PatchEmbed expects: [total_patches, C*T*pH*pW] (2D)
+            eprintln!("[GLM-OCR] about to call to_tensor_f32");
+            eprintln!("[GLM-OCR] ImageData.raw.len() = {}", images.raw.len());
+            eprintln!("[GLM-OCR] ImageData.shape = {:?}", images.shape);
             let mut pixel_values = images.to_tensor_f32(&device)?;
+            eprintln!("[GLM-OCR] to_tensor_f32 OK");
             let dims = pixel_values.dims();
+            eprintln!("[GLM-OCR] dims = {:?}, dtype = {:?}", dims, pixel_values.dtype());
             if dims.len() == 3 {
+                eprintln!("[GLM-OCR] reshaping 3D -> 2D: {:?} -> ({}, {})", dims, dims[0] * dims[1], dims[2]);
                 pixel_values = pixel_values.reshape((dims[0] * dims[1], dims[2]))?;
+                eprintln!("[GLM-OCR] reshape OK");
             }
+            eprintln!("[GLM-OCR] about to call to_dtype({:?})", dtype);
             pixel_values = pixel_values.to_dtype(dtype)?;
+            eprintln!("[GLM-OCR] to_dtype OK");
 
             // grid_thw: [N_images, 3] with T=1
             let grid_thw = {
