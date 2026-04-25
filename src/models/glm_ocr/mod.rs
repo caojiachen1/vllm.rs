@@ -4,6 +4,7 @@
 //! Reference: https://huggingface.co/zai-org/GLM-OCR
 
 pub mod config;
+pub mod input;
 pub mod vision;
 
 use crate::models::glm4::GLM4ForCausalLM;
