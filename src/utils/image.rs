@@ -23,7 +23,20 @@ pub struct ImageData {
 
 impl ImageData {
     pub fn to_tensor_f32(&self, device: &Device) -> Result<Tensor> {
-        let floats: &[f32] = bytemuck::cast_slice(&self.raw);
+        // Vec<u8> is only 1-byte aligned, but bytemuck::cast_slice requires
+        // f32 alignment (4 bytes). Fall back to byte-by-byte copy when
+        // alignment is insufficient.
+        let floats: &[f32] = match bytemuck::try_cast_slice(&self.raw) {
+            Ok(f) => f,
+            Err(_) => {
+                let n = self.raw.len() / 4;
+                let mut aligned = vec![0f32; n];
+                for (i, chunk) in self.raw.chunks_exact(4).enumerate().take(n) {
+                    aligned[i] = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                }
+                return Tensor::from_vec(aligned, self.shape.clone(), device);
+            }
+        };
         Tensor::from_slice(floats, self.shape.clone(), device)
     }
 }
