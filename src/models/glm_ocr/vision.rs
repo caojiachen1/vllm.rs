@@ -570,9 +570,8 @@ impl GlmOcrVisionModel {
         let h_emb = freq_table.index_select(&hpos_t, 0)?;
         let w_emb = freq_table.index_select(&wpos_t, 0)?;
 
-        // Concatenate: rotary_pos_emb [total, head_dim], then cat twice -> [total, head_dim*2]
-        let rotary_pos_emb = Tensor::cat(&[&h_emb, &w_emb], 1)?; // [total, head_dim]
-        let emb = Tensor::cat(&[&rotary_pos_emb, &rotary_pos_emb], 1)?; // [total, head_dim*2]
+        // Concatenate: [total, head_dim]
+        let emb = Tensor::cat(&[&h_emb, &w_emb], 1)?;
 
         Ok((emb.cos()?, emb.sin()?))
     }
