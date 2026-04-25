@@ -50,18 +50,24 @@ impl GlmOcrImageProcessor {
     /// Resize the image to dimensions divisible by factor (patch_size * merge_size).
     fn smart_resize(&self, h: usize, w: usize) -> Result<(usize, usize)> {
         let factor = self.patch_size * self.merge_size;
-        let mut nh = (h as f64 / factor as f64).round() as usize * factor;
-        let mut nw = (w as f64 / factor as f64).round() as usize * factor;
+        // Use ceil to always round up, and enforce minimum of factor
+        let mut nh = ((h as f64 / factor as f64).ceil() as usize * factor).max(factor);
+        let mut nw = ((w as f64 / factor as f64).ceil() as usize * factor).max(factor);
+        eprintln!("[GLM-OCR smart_resize] input h={}, w={}, factor={}, min_h={}, min_w={}, nh={}, nw={}",
+            h, w, factor, factor, factor, nh, nw);
 
         let pixels = nh * nw;
+        // Scale down if too large, scale up if too small
         if pixels > self.max_pixels {
             let beta = (pixels as f64 / self.max_pixels as f64).sqrt();
-            nh = ((nh as f64 / beta) as usize / factor) * factor;
-            nw = ((nw as f64 / beta) as usize / factor) * factor;
+            nh = (((nh as f64 / beta) as usize / factor) * factor).max(factor);
+            nw = (((nw as f64 / beta) as usize / factor) * factor).max(factor);
+            eprintln!("[GLM-OCR smart_resize] scaled down: nh={}, nw={}", nh, nw);
         } else if pixels < self.min_pixels {
             let beta = (self.min_pixels as f64 / pixels as f64).sqrt();
-            nh = ((nh as f64 * beta) as usize / factor) * factor;
-            nw = ((nw as f64 * beta) as usize / factor) * factor;
+            nh = (((nh as f64 * beta) as usize / factor) * factor).max(factor);
+            nw = (((nw as f64 * beta) as usize / factor) * factor).max(factor);
+            eprintln!("[GLM-OCR smart_resize] scaled up: nh={}, nw={}", nh, nw);
         }
 
         Ok((nh, nw))
@@ -71,18 +77,30 @@ impl GlmOcrImageProcessor {
     /// Returns (flattened_patches [N, C*T*pH*pW], (grid_h, grid_w)).
     fn prepreprocess(&mut self, image: &DynamicImage, target_hw: (u32, u32)) -> Result<(Tensor, (usize, usize))> {
         let (th, tw) = target_hw;
+        eprintln!("[GLM-OCR prepreprocess] target_hw=({}, {}), fixed_hw=({:?}, {:?})", th, tw, self.fixed_height, self.fixed_width);
 
         // Smart resize
         let (mut nh, mut nw) = self.smart_resize(th as usize, tw as usize)?;
+        eprintln!("[GLM-OCR prepreprocess] after smart_resize: nh={}, nw={}", nh, nw);
 
         // Use fixed size if already set (for batch consistency)
         if let (Some(h), Some(w)) = (self.fixed_height, self.fixed_width) {
             nh = h;
             nw = w;
+            eprintln!("[GLM-OCR prepreprocess] using cached fixed: nh={}, nw={}", nh, nw);
         } else {
             self.fixed_height = Some(nh);
             self.fixed_width = Some(nw);
         }
+
+        // Ensure at least 1 grid cell in each dimension
+        if nh < self.patch_size {
+            nh = self.patch_size;
+        }
+        if nw < self.patch_size {
+            nw = self.patch_size;
+        }
+        eprintln!("[GLM-OCR prepreprocess] final: nh={}, nw={}", nh, nw);
 
         // Resize and convert to RGB
         let image = image
@@ -98,6 +116,7 @@ impl GlmOcrImageProcessor {
             image_mean,
             image_std,
         )?;
+        eprintln!("[GLM-OCR prepreprocess] to_tensor output shape: {:?}", patches.dims());
 
         // For a single image, duplicate to match temporal_patch_size (T=1 -> T=2)
         if patches.dim(0)? == 1 {
@@ -108,6 +127,7 @@ impl GlmOcrImageProcessor {
         let grid_t = patches.dim(0)? / self.temporal_patch_size;
         let grid_h = nh / self.patch_size;
         let grid_w = nw / self.patch_size;
+        eprintln!("[GLM-OCR prepreprocess] c={}, grid_t={}, grid_h={}, grid_w={}, num_patches={}", c, grid_t, grid_h, grid_w, grid_t * grid_h * grid_w);
 
         // Reshape [T, C, H, W] -> [grid_t, T, C, grid_h/merge, merge, pH, grid_w/merge, merge, pW]
         patches = patches.reshape(&[
