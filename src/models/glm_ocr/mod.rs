@@ -173,8 +173,14 @@ impl GlmOcrForConditionalGeneration {
 
             let dtype = input_embeds.dtype();
 
-            // pixel_values: [N_images, C * T * pH * pW] already flat
-            let pixel_values = images.to_tensor_f32(&device)?.to_dtype(dtype)?;
+            // pixel_values from GlmOcrImageProcessor: [N_images, N_patches, C*T*pH*pW]
+            // Vision model PatchEmbed expects: [total_patches, C*T*pH*pW] (2D)
+            let mut pixel_values = images.to_tensor_f32(&device)?;
+            let dims = pixel_values.dims();
+            if dims.len() == 3 {
+                pixel_values = pixel_values.reshape((dims[0] * dims[1], dims[2]))?;
+            }
+            pixel_values = pixel_values.to_dtype(dtype)?;
 
             // grid_thw: [N_images, 3] with T=1
             let grid_thw = {
