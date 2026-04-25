@@ -54,7 +54,6 @@ impl GlmOcrImageProcessor {
         // Use ceil to always round up, and enforce minimum of factor
         let mut nh = ((h as f64 / factor as f64).ceil() as usize * factor).max(factor);
         let mut nw = ((w as f64 / factor as f64).ceil() as usize * factor).max(factor);
-        eprintln!("[GLM-OCR smart_resize] h={}, w={}, factor={}, nh={}, nw={}", h, w, factor, nh, nw);
 
         let pixels = nh * nw;
         // Scale down if too large, scale up if too small (always preserving >= factor)
