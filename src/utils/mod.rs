@@ -1246,6 +1246,26 @@ pub fn init_config_tokenizer(
                         config.moe_cfg = Some(moe_cfg);
                         config
                     }
+                    "GlmOcrForConditionalGeneration" => {
+                        // GLM-OCR text_config has rope_parameters nested; strip it
+                        // to let default Config deserialization work, then apply manually
+                        let mut cv = config_value.clone();
+                        if let Some(obj) = cv.as_object_mut() {
+                            obj.remove("rope_parameters");
+                        }
+                        let mut config: Config = serde_json::from_value(cv)
+                            .map_err(candle_core::Error::wrap)?;
+                        let tc = &raw_config_json["text_config"];
+                        if let Some(rp) = tc.get("rope_parameters") {
+                            if let Some(theta) = rp.get("rope_theta").and_then(|v| v.as_f64()) {
+                                config.rope_theta = Some(theta);
+                            }
+                        }
+                        if let Some(eos) = tc.get("eos_token_id") {
+                            config.eos_token_id = serde_json::from_value(eos.clone()).ok();
+                        }
+                        config
+                    }
                     _ => serde_json::from_value(config_value).map_err(candle_core::Error::wrap)?,
                 };
 
@@ -1773,6 +1793,7 @@ pub fn get_arch_rope(
         ("LlamaForConditionalGeneration", false),
         ("IQuestCoderForCausalLM", false),
         ("Glm4ForCausalLM", true),
+        ("GlmOcrForConditionalGeneration", false),
         ("glm4", true),
         ("qwen2", false),
         ("qwen3", false),
@@ -1880,6 +1901,10 @@ pub fn get_arch_rope(
         "Glm4MoeLiteForCausalLM" | "glm4moelite" => (
             ModelType::GLM4MoeLite,
             "[gMASK]<sop><|user|>{}<|assistant|>".to_string(),
+        ),
+        "GlmOcrForConditionalGeneration" => (
+            ModelType::GlmOcr,
+            "<|user|>\n{}<|assistant|>".to_string(),
         ),
         "DeepseekV3ForCausalLM"
         | "DeepseekV32ForCausalLM"

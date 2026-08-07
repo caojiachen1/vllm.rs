@@ -681,6 +681,7 @@ pub enum ModelType {
     GLM4,
     GLM4MoE,
     GLM4MoeLite,
+    GlmOcr,
     Yi,
     StableLM,
     DeepSeek,

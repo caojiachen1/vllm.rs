@@ -4,6 +4,7 @@ pub mod gemma4;
 pub mod glm4;
 pub mod glm4_moe;
 pub mod glm4_moe_lite;
+pub mod glm_ocr;
 pub mod layers;
 pub mod llama;
 pub mod llama4;
